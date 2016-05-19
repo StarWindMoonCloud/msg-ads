@@ -6,11 +6,14 @@ import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.telephony.SmsManager;
+import android.util.Log;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
+
+import com.amplitude.api.Amplitude;
 
 public class MainActivity extends Activity {
 
@@ -49,10 +52,12 @@ public class MainActivity extends Activity {
             }
         });
 
+        Amplitude.getInstance().initialize(this, "98b0a23cf36cfbd882d8d00391b799b5").enableForegroundTracking(getApplication());
     }
 
     public void sendSmsByManager() {
         try {
+            Amplitude.getInstance().logEvent("SmsManager");
             // Get the default instance of the SmsManager
             SmsManager smsManager = SmsManager.getDefault();
             smsManager.sendTextMessage(phoneNumber.getText().toString(),
