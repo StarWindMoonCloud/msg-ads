@@ -1,27 +1,39 @@
 package com.haiqili.msgads;
 
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Bundle;
 
 import android.app.Activity;
-import android.content.Intent;
-import android.net.Uri;
 import android.telephony.SmsManager;
 import android.util.Log;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.Toast;
 
 import com.amplitude.api.Amplitude;
+import com.google.common.util.concurrent.RateLimiter;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.util.List;
 
 public class MainActivity extends Activity {
 
+    private RateLimiter rateLimiter;
     private EditText phoneNumber;
     private EditText smsBody;
     private Button smsManagerBtn;
-    private Button smsSendToBtn;
-    private Button smsViewBtn;
+    private NumberGenerator numberGenerator;
+    private PendingIntent sentPI;
+    private PendingIntent deliveredPI;
+    private BroadcastReceiver sentBroadcastReceiver;
+    private BroadcastReceiver receiveBroadcastReceiver;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -31,81 +43,87 @@ public class MainActivity extends Activity {
         phoneNumber = (EditText) findViewById(R.id.phoneNumber);
         smsBody = (EditText) findViewById(R.id.smsBody);
         smsManagerBtn = (Button) findViewById(R.id.smsManager);
-        smsSendToBtn = (Button) findViewById(R.id.smsSIntent);
-        smsViewBtn = (Button) findViewById(R.id.smsVIntent);
+
+        numberGenerator = new NumberGenerator();
+        Amplitude.getInstance().initialize(this, "98b0a23cf36cfbd882d8d00391b799b5").enableForegroundTracking(getApplication());
+        sentPI = PendingIntent.getBroadcast(this, 0,
+                new Intent(Constant.Event.SENT), 0);
+
+        deliveredPI = PendingIntent.getBroadcast(this, 0,
+                new Intent(Constant.Event.DELIVERED), 0);
+        rateLimiter = RateLimiter.create(Constant.Rate.SMS_QPS_LIMIT);
 
         smsManagerBtn.setOnClickListener(new OnClickListener() {
             public void onClick(View view) {
-                sendSmsByManager();
+                List<String> numbers = numberGenerator.generateNumber(phoneNumber.getText().toString());
+                for (String number : numbers) {
+                    sendSMS(number, smsBody.getText().toString());
+                    rateLimiter.acquire();
+                }
             }
         });
-
-        smsSendToBtn.setOnClickListener(new OnClickListener() {
-            public void onClick(View view) {
-                sendSmsBySIntent();
-            }
-        });
-
-        smsViewBtn.setOnClickListener(new OnClickListener() {
-            public void onClick(View view) {
-                sendSmsByVIntent();
-            }
-        });
-
-        Amplitude.getInstance().initialize(this, "98b0a23cf36cfbd882d8d00391b799b5").enableForegroundTracking(getApplication());
     }
 
-    public void sendSmsByManager() {
+    @Override
+    protected void onResume() {
+        registerStatusIntent();
+        super.onResume();
+    }
+
+    @Override
+    protected void onPause() {
+        unregisterStatusIntent();
+        super.onPause();
+    }
+
+    private void sendSMS(String phoneNumber, String message)
+    {
+        SmsManager sms = SmsManager.getDefault();
+        sms.sendTextMessage(phoneNumber, null, message, sentPI, deliveredPI);
+    }
+
+    private void sendToAmplitude(String type) {
+       Amplitude.getInstance().logEvent(type);
+    }
+    private void sendToAmplitude(String type, String key, String value) {
         try {
-            Amplitude.getInstance().logEvent("SmsManager");
-            // Get the default instance of the SmsManager
-            SmsManager smsManager = SmsManager.getDefault();
-            smsManager.sendTextMessage(phoneNumber.getText().toString(),
-                    null,
-                    smsBody.getText().toString(),
-                    null,
-                    null);
-            Toast.makeText(getApplicationContext(), "Your sms has successfully sent!",
-                    Toast.LENGTH_LONG).show();
-        } catch (Exception ex) {
-            Toast.makeText(getApplicationContext(),"Your sms has failed...",
-                    Toast.LENGTH_LONG).show();
-            ex.printStackTrace();
+            JSONObject eventProperties = new JSONObject();
+            eventProperties.put(key, value);
+            Amplitude.getInstance().logEvent(type, eventProperties);
+        } catch (JSONException e) {
+            Amplitude.getInstance().logEvent(Constant.Event.ERROR);
         }
     }
+    private void registerStatusIntent() {
+        //---when the SMS has been sent---
+        sentBroadcastReceiver = new BroadcastReceiver(){
+            @Override
+            public void onReceive(Context arg0, Intent arg1) {
+                String statusCode = StatusUtil.code2String(getResultCode());
+                if (Activity.RESULT_OK == getResultCode()) {
+                    sendToAmplitude(Constant.Event.SENT_SUCCESS);
+                }
+                sendToAmplitude(Constant.Event.SENT, Constant.Event.STATUS, statusCode);
+            }};
+        registerReceiver(sentBroadcastReceiver, new IntentFilter(Constant.Event.SENT));
 
-    public void sendSmsBySIntent() {
-        // add the phone number in the data
-        Uri uri = Uri.parse("smsto:" + phoneNumber.getText().toString());
-
-        Intent smsSIntent = new Intent(Intent.ACTION_SENDTO, uri);
-        // add the message at the sms_body extra field
-        smsSIntent.putExtra("sms_body", smsBody.getText().toString());
-        try{
-            startActivity(smsSIntent);
-        } catch (Exception ex) {
-            Toast.makeText(MainActivity.this, "Your sms has failed...",
-                    Toast.LENGTH_LONG).show();
-            ex.printStackTrace();
-        }
+        //---when the SMS has been delivered---
+        receiveBroadcastReceiver = new BroadcastReceiver(){
+            @Override
+            public void onReceive(Context arg0, Intent arg1) {
+                String statusCode = StatusUtil.code2String(getResultCode());
+                if (Activity.RESULT_OK == getResultCode()) {
+                    sendToAmplitude(Constant.Event.DELIVERED_SUCCESS);
+                }
+                sendToAmplitude(Constant.Event.DELIVERED, Constant.Event.STATUS, statusCode);
+            }
+        };
+        registerReceiver(receiveBroadcastReceiver, new IntentFilter(Constant.Event.DELIVERED));
     }
 
-    public void sendSmsByVIntent() {
-
-        Intent smsVIntent = new Intent(Intent.ACTION_VIEW);
-        // prompts only sms-mms clients
-        smsVIntent.setType("vnd.android-dir/mms-sms");
-
-        // extra fields for number and message respectively
-        smsVIntent.putExtra("address", phoneNumber.getText().toString());
-        smsVIntent.putExtra("sms_body", smsBody.getText().toString());
-        try{
-            startActivity(smsVIntent);
-        } catch (Exception ex) {
-            Toast.makeText(MainActivity.this, "Your sms has failed...",
-                    Toast.LENGTH_LONG).show();
-            ex.printStackTrace();
-        }
-
+    private void unregisterStatusIntent() {
+        unregisterReceiver(sentBroadcastReceiver);
+        unregisterReceiver(receiveBroadcastReceiver);
     }
 }
+

@@ -33,16 +33,5 @@
         android:layout_height="wrap_content"
         android:text="Send the sms by SmsManager" />
 
-    <Button
-        android:id="@+id/smsSIntent"
-        android:layout_width="fill_parent"
-        android:layout_height="wrap_content"
-        android:text="Send the sms by SENDTO" />
-
-    <Button
-        android:id="@+id/smsVIntent"
-        android:layout_width="fill_parent"
-        android:layout_height="wrap_content"
-        android:text="Send the sms by VIEW" />
 
 </LinearLayout>
