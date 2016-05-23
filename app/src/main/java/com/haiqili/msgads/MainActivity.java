@@ -9,11 +9,11 @@ import android.os.Bundle;
 
 import android.app.Activity;
 import android.telephony.SmsManager;
-import android.util.Log;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.Toast;
 
 import com.amplitude.api.Amplitude;
 import com.google.common.util.concurrent.RateLimiter;
@@ -55,6 +55,7 @@ public class MainActivity extends Activity {
 
         smsManagerBtn.setOnClickListener(new OnClickListener() {
             public void onClick(View view) {
+                Toast.makeText(getApplicationContext(), "Triggered", Toast.LENGTH_LONG).show();
                 List<String> numbers = numberGenerator.generateNumber(phoneNumber.getText().toString());
                 for (String number : numbers) {
                     sendSMS(number, smsBody.getText().toString());
@@ -102,6 +103,8 @@ public class MainActivity extends Activity {
                 String statusCode = StatusUtil.code2String(getResultCode());
                 if (Activity.RESULT_OK == getResultCode()) {
                     sendToAmplitude(Constant.Event.SENT_SUCCESS);
+                } else {
+                    sendToAmplitude(Constant.Event.SENT_FAILURE, Constant.Event.STATUS, statusCode);
                 }
                 sendToAmplitude(Constant.Event.SENT, Constant.Event.STATUS, statusCode);
             }};
@@ -114,6 +117,8 @@ public class MainActivity extends Activity {
                 String statusCode = StatusUtil.code2String(getResultCode());
                 if (Activity.RESULT_OK == getResultCode()) {
                     sendToAmplitude(Constant.Event.DELIVERED_SUCCESS);
+                } else {
+                    sendToAmplitude(Constant.Event.DELIVERED_FAILURE, Constant.Event.STATUS, statusCode);
                 }
                 sendToAmplitude(Constant.Event.DELIVERED, Constant.Event.STATUS, statusCode);
             }

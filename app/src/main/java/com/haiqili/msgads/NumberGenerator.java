@@ -24,7 +24,6 @@ public class NumberGenerator {
      * @return
      */
     List<String> generateNumber(String text) {
-        Log.e("generateNumber", text);
         List<String> numbers = new ArrayList<>();
         if (text != null && text.startsWith(NUMBER_START_CHINA)) {
             String numberText = text.substring(3);
